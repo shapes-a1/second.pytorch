@@ -119,6 +119,7 @@ KittiViewer.prototype = {
     },
 
     inference: function( ){
+
         let self = this;
         let data = {"image_idx": self.imageIndex};
         return $.ajax({
@@ -128,7 +129,6 @@ KittiViewer.prototype = {
             data: JSON.stringify(data),
             error: function (jqXHR, exception) {
                 self.logger.error("inference fail!");
-                console.log("inference fail!");
             },
             success: function (response) {
                 response = response["results"][0];
@@ -136,7 +136,10 @@ KittiViewer.prototype = {
                 var dims = response["dt_dims"];
                 var rots = response["dt_rots"];
                 var scores = response["dt_scores"];
+                let label_with_score = [];
+
                 self.dtBboxes = response["dt_bbox"];
+                
                 for (var i = 0; i < self.dtBoxes.length; ++i) {
                     for (var j = self.dtBoxes[i].children.length - 1; j >= 0; j--) {
                         self.dtBoxes[i].remove(self.dtBoxes[i].children[j]);
@@ -144,17 +147,21 @@ KittiViewer.prototype = {
                     scene.remove(self.dtBoxes[i]);
                     self.dtBoxes[i].geometry.dispose();
                     self.dtBoxes[i].material.dispose();
+                    //self.dtBoxes[i].material.transparent = true;
+                    //self.dtBoxes[i].material.opacity = 0.1; 
                 }
-                let label_with_score = [];
+                
+
                 for (var i = 0; i < locs.length; ++i) {
                     label_with_score.push("score=" + scores[i].toFixed(2).toString());
                 }
                 
-                self.dtBoxes = boxEdgeWithLabel(dims, locs, rots, 2, self.dtBoxColor,
-                    label_with_score, self.dtLabelColor);
+                self.dtBoxes = boxEdgeWithLabel(dims, locs, rots, 2, self.dtBoxColor, label_with_score, self.dtLabelColor);
+                
                 for (var i = 0; i < self.dtBoxes.length; ++i) {
                     scene.add(self.dtBoxes[i]);
                 }
+
                 self.drawImage();
             }
         });
@@ -196,6 +203,9 @@ KittiViewer.prototype = {
             this.gtBoxes[i].material.dispose();
         }
         this.gtBoxes = [];
+
+        console.log(this.dtBoxes.length);
+
         for (var i = 0; i < this.dtBoxes.length; ++i) {
             for (var j = this.dtBoxes[i].children.length - 1; j >= 0; j--) {
                 this.dtBoxes[i].remove(this.dtBoxes[i].children[j]);
@@ -203,17 +213,24 @@ KittiViewer.prototype = {
             scene.remove(this.dtBoxes[i]);
             this.dtBoxes[i].geometry.dispose();
             this.dtBoxes[i].material.dispose();
+            //this.dtBoxes[i].material.transparent = true;
+            //this.dtBoxes[i].material.opacity = this.dtBoxes[i].material.opacity - 0.5; 
         }
+        
+        //
         this.dtBoxes = [];
         this.gtBboxes = [];
         this.dtBboxes = [];
-        // this.image = '';
     },
 
     // load input and point cloud images
     _plot: function (image_idx) {
         
         var imgLength = this.imageIndexes.length;
+        let data = {};
+        data["image_idx"] = image_idx;
+        data["with_det"] = this.drawDet;
+        let self = this;
 
         // handle errors 
         // - exit when there are no more images
@@ -228,12 +245,7 @@ KittiViewer.prototype = {
             return;
         }
         
-        let data = {};
-        data["image_idx"] = image_idx;
-        data["with_det"] = this.drawDet;
-        let self = this;
-        
-        var pointCloudReq = $.ajax({
+        const pointCloudReq = $.ajax({
             url: this.addhttp(this.backend) + '/api/get_pointcloud',
             method: 'POST',
             contentType: "application/json",
@@ -245,7 +257,7 @@ KittiViewer.prototype = {
             // load point cloud images
             success: function (response) {
                 
-                self.clear();
+                //self.clear();
                 response = response["results"][0];
                 var points_buf = str2buffer(atob(response["pointcloud"]));
                 var points = new Float32Array(points_buf);
@@ -267,42 +279,39 @@ KittiViewer.prototype = {
                 }
 
                 if (self.drawDet && response.hasOwnProperty("dt_dims")) {
-
                     var locs = response["dt_locs"];
                     var dims = response["dt_dims"];
                     var rots = response["dt_rots"];
                     var scores = response["dt_scores"];
                     self.dtBboxes = response["dt_bbox"];
                     let label_with_score = [];
+
                     for (var i = 0; i < locs.length; ++i) {
                         label_with_score.push("score=" + scores[i].toFixed(2).toString());
                     }
                     
                     self.dtBoxes = boxEdgeWithLabel(dims, locs, rots, 2, self.dtBoxColor,
                         label_with_score, self.dtLabelColor);
+
                     for (var i = 0; i < self.dtBoxes.length; ++i) {
                         scene.add(self.dtBoxes[i]);
                     }
                 }
+
                 for (var i = 0; i < Math.min(points.length / 4, self.maxPoints); i++) {
-                    self.pointCloud.geometry.attributes.position.array[i * 3] = points[
-                        i * 4];
-                    self.pointCloud.geometry.attributes.position.array[i * 3 + 1] =
-                        points[i * 4 +
-                            1];
-                    self.pointCloud.geometry.attributes.position.array[i * 3 + 2] =
-                        points[i * 4 +
-                            2];
+                    self.pointCloud.geometry.attributes.position.array[i * 3] = points[i * 4];
+                    self.pointCloud.geometry.attributes.position.array[i * 3 + 1] = points[i * 4 + 1];
+                    self.pointCloud.geometry.attributes.position.array[i * 3 + 2] = points[i * 4 + 2];
                 }
-                self.pointCloud.geometry.setDrawRange(0, Math.min(points.length / 4,
-                    self.maxPoints));
+
+                self.pointCloud.geometry.setDrawRange(0, Math.min(points.length / 4, self.maxPoints));
                 self.pointCloud.geometry.attributes.position.needsUpdate = true;
                 self.pointCloud.geometry.computeBoundingSphere();
-            
             }
         });
+        
 
-        var imgFeedReq = $.ajax({
+        const imgFeedReq = $.ajax({
             url: this.addhttp(this.backend) + '/api/get_image',
             method: 'POST',
             contentType: "application/json",
@@ -316,14 +325,73 @@ KittiViewer.prototype = {
                 self.image = response["image_b64"];
             }
         });
-        $.when(pointCloudReq, imgFeedReq)
+
+        let inferenceData = {"image_idx": self.imageIndex};
+        const inference = $.ajax({
+            url: this.addhttp(this.backend) + '/api/inference_by_idx',
+            method: 'POST',
+            contentType: "application/json",
+            data: JSON.stringify(inferenceData),
+            error: function (jqXHR, exception) {
+                self.logger.error("inference fail!");
+            },
+            success: function (response) {
+                response = response["results"][0];
+                var locs = response["dt_locs"];
+                var dims = response["dt_dims"];
+                var rots = response["dt_rots"];
+                var scores = response["dt_scores"];
+                let label_with_score = [];
+
+                self.dtBboxes = response["dt_bbox"];
+                
+                for (var i = 0; i < self.dtBoxes.length; ++i) {
+                    for (var j = self.dtBoxes[i].children.length - 1; j >= 0; j--) {
+                        self.dtBoxes[i].remove(self.dtBoxes[i].children[j]);
+                    }
+                    scene.remove(self.dtBoxes[i]);
+                    self.dtBoxes[i].geometry.dispose();
+                    self.dtBoxes[i].material.dispose();
+                    //self.dtBoxes[i].material.transparent = true;
+                    //self.dtBoxes[i].material.opacity = 0.1; 
+                }
+                
+
+                for (var i = 0; i < locs.length; ++i) {
+                    label_with_score.push("score=" + scores[i].toFixed(2).toString());
+                }
+                
+                self.dtBoxes = boxEdgeWithLabel(dims, locs, rots, 2, self.dtBoxColor, label_with_score, self.dtLabelColor);
+                
+                for (var i = 0; i < self.dtBoxes.length; ++i) {
+                    scene.add(self.dtBoxes[i]);
+                }
+            }
+        });
+    
+
+        $.when(pointCloudReq, imgFeedReq, inference)
         .then(() => {
-            // draw image, bbox
             self.drawImage();
         })
         .done(() => {
             if (this.animate) {
-                this._plot(image_idx + 1);
+                self.imageIndex = self.imageIndex + 1;
+                this._plot(self.imageIndex);
+            }
+
+            if (true) {
+                // whole wiew
+                html2canvas(document.querySelector("#kitti")).then(canvas => {
+                    self.saveFile(canvas.toDataURL("image/jpeg"), `pc_${this.imageIndex}.jpg`);
+                });
+
+
+                // birds eye
+                html2canvas(document.querySelector("#panelBev")).then(canvas => {
+                    self.saveFile(canvas.toDataURL("image/jpeg"), `bev_${this.imageIndex}.jpg`);
+                });
+            
             }
         });
         
@@ -370,7 +438,6 @@ KittiViewer.prototype = {
             }
         };
         image.src = this.image;
-
     },
 
     saveAsImage: function(renderer) {
